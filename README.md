@@ -4,11 +4,11 @@ CareSync is a responsive support platform for parents and caregivers of children
 
 > **Because Every Child's Journey Is Different.**
 > 
-###Live Demo
+#Live Demo
 
-> [**Try CareSync**]
+> **[Try CareSync]
 > 
-> caresync-woad-two.vercel.app
+> (caresync-woad-two.vercel.app)**
 > 
 ## Highlights
 
