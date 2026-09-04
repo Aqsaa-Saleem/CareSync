@@ -1,3 +1,4 @@
+caresync-woad-two.vercel.app
 # CareSync
 
 CareSync is a responsive support platform for parents and caregivers of children with developmental or accessibility-related needs. It brings personalized activities, progress tracking, care resources, and practical guidance into one private, parent-focused experience.
