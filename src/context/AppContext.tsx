@@ -2,7 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useRef, useCal
 import type { ReactNode } from 'react';
 import type { User } from 'firebase/auth';
 import type { AppState, Screen, ChildProfile, ParentNote, ChatMessage, Notification, ProfileSetupMode } from '../types';
-import { signIn, signUp, signInWithGoogle, signOut as firebaseSignOut, observeAuth } from '../firebase/auth';
+import { signIn, signUp, signInWithGoogle, sendPasswordReset, signOut as firebaseSignOut, observeAuth } from '../firebase/auth';
 import {
   loadUserData,
   saveUserData,
@@ -49,7 +49,10 @@ function createInitialUserState(): AppState {
     language: 'en',
     authUser: null,
     authLoading: true,
+    authInitialized: false,
+    userDataLoading: false,
     authError: null,
+    authErrorCode: null,
     syncError: null,
     syncStatus: 'idle',
   };
@@ -81,7 +84,9 @@ type Action =
   | { type: 'SET_LANGUAGE'; language: 'en' | 'ur' }
   | { type: 'SET_AUTH_USER'; user: User | null }
   | { type: 'SET_AUTH_LOADING'; loading: boolean }
-  | { type: 'SET_AUTH_ERROR'; error: string | null }
+  | { type: 'SET_AUTH_INITIALIZED'; initialized: boolean }
+  | { type: 'SET_USER_DATA_LOADING'; loading: boolean }
+  | { type: 'SET_AUTH_ERROR'; error: string | null; code?: string | null }
   | { type: 'SET_SYNC_ERROR'; error: string | null }
   | { type: 'SET_SYNC_STATUS'; status: AppState['syncStatus'] }
   | { type: 'LOAD_FIREBASE_STATE'; state: Partial<AppState> }
@@ -195,14 +200,29 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, authUser: action.user };
     case 'SET_AUTH_LOADING':
       return { ...state, authLoading: action.loading };
+    case 'SET_AUTH_INITIALIZED':
+      return { ...state, authInitialized: action.initialized };
+    case 'SET_USER_DATA_LOADING':
+      return { ...state, userDataLoading: action.loading };
     case 'SET_AUTH_ERROR':
-      return { ...state, authError: action.error };
+      return { ...state, authError: action.error, authErrorCode: action.code ?? null };
     case 'SET_SYNC_ERROR':
       return { ...state, syncError: action.error, syncStatus: action.error ? 'error' : state.syncStatus };
     case 'SET_SYNC_STATUS':
       return { ...state, syncStatus: action.status, syncError: action.status === 'error' ? state.syncError : null };
     case 'LOAD_FIREBASE_STATE': {
-      const merged = { ...state, ...action.state };
+      // Firestore only owns persisted app data. Never let a loaded state replace
+      // the active Firebase Auth session or its in-flight bootstrap flags.
+      const merged = {
+        ...state,
+        ...action.state,
+        authUser: state.authUser,
+        authLoading: state.authLoading,
+        authInitialized: state.authInitialized,
+        userDataLoading: state.userDataLoading,
+        authError: state.authError,
+        authErrorCode: state.authErrorCode,
+      };
       merged.notifications = dedupeNotifications(merged.notifications);
       const active = merged.children.find((c) => c.id === merged.activeChildId) || merged.children[0] || null;
       merged.childProfile = active;
@@ -221,7 +241,10 @@ function reducer(state: AppState, action: Action): AppState {
         ...createInitialUserState(),
         authUser: null,
         authLoading: false,
+        authInitialized: true,
+        userDataLoading: false,
         authError: null,
+        authErrorCode: null,
         syncError: null,
         syncStatus: 'idle',
         currentScreen: 'splash',
@@ -240,6 +263,7 @@ interface AppContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   setAuthError: (error: string | null) => void;
   clearSyncError: () => void;
@@ -248,23 +272,37 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+function getFirebaseErrorCode(error: unknown): string | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? code : null;
+}
+
 function mapFirebaseError(error: unknown): string {
-  const code = (error as any)?.code || '';
-  switch (code) {
+  switch (getFirebaseErrorCode(error)) {
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/user-disabled':
       return 'This account has been disabled.';
     case 'auth/user-not-found':
-      return 'No account found with this email.';
+      return 'No account found. Please sign up first to create your CareSync account.';
     case 'auth/wrong-password':
-      return 'Incorrect password. Please try again.';
+      return 'Incorrect password. Please try again or reset your password.';
     case 'auth/email-already-in-use':
-      return 'An account with this email already exists.';
+      return 'An account with this email already exists. Please log in instead.';
     case 'auth/weak-password':
       return 'Password should be at least 6 characters.';
     case 'auth/invalid-credential':
-      return 'Invalid email or password.';
+      return 'We could not log you in. Check your email and password, or sign up if you are new to CareSync.';
+    case 'auth/operation-not-allowed':
+      return 'Email/password authentication is not enabled for this Firebase project.';
+    case 'auth/unauthorized-continue-uri':
+    case 'auth/invalid-continue-uri':
+    case 'auth/missing-continue-uri':
+      return 'Password reset cannot be sent because this site domain is not authorized.';
+    case 'auth/invalid-api-key':
+      return 'CareSync could not connect to Firebase. Please check the deployed Firebase configuration.';
+    case 'auth/too-many-requests':
+      return 'Too many requests. Please wait a moment before trying again.';
     case 'auth/network-request-failed':
       return 'Network error. Please check your connection.';
     case 'permission-denied':
@@ -287,91 +325,115 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const isSavingRef = useRef(false);
   const pendingSaveRef = useRef<Partial<StoredUserData> | null>(null);
 
-  // Observe Firebase Auth state
+  // Resolve Firebase Auth before routing. A signed-in user is never sent back to
+  // the login screen while the initial observer callback or user-data load runs.
   useEffect(() => {
     dispatch({ type: 'SET_AUTH_LOADING', loading: true });
-    unsubscribeAuthRef.current = observeAuth((user) => {
-      dispatch({ type: 'SET_AUTH_USER', user });
-      dispatch({ type: 'SET_AUTH_LOADING', loading: false });
-      if (!user) {
+    unsubscribeAuthRef.current = observeAuth(
+      (user) => {
+        if (!user) {
+          unsubscribeDataRef.current?.();
+          unsubscribeDataRef.current = null;
+          dispatch({ type: 'SIGN_OUT' });
+          return;
+        }
+
+        dispatch({ type: 'SET_AUTH_USER', user });
+        dispatch({ type: 'SET_AUTH_INITIALIZED', initialized: true });
+        dispatch({ type: 'SET_AUTH_LOADING', loading: false });
+        dispatch({ type: 'SET_USER_DATA_LOADING', loading: true });
+      },
+      (error) => {
         dispatch({ type: 'SIGN_OUT' });
-      }
-    });
+        dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error), code: getFirebaseErrorCode(error) });
+      },
+    );
+
     return () => {
       unsubscribeAuthRef.current?.();
     };
   }, []);
 
-  // Subscribe to Firestore data when authenticated
+  // Bootstrap a user's Firestore document before subscribing. Starting the
+  // listener afterward avoids it routing to the splash screen with stale data.
   useEffect(() => {
-    if (!state.authUser) {
+    const authUser = state.authUser;
+    if (!authUser || !state.authInitialized) {
       unsubscribeDataRef.current?.();
       unsubscribeDataRef.current = null;
       return;
     }
 
-    const uid = state.authUser.uid;
-    dispatch({ type: 'SET_AUTH_LOADING', loading: true });
+    let isCurrent = true;
+    const uid = authUser.uid;
+    const email = authUser.email || '';
+    dispatch({ type: 'SET_USER_DATA_LOADING', loading: true });
 
-    loadUserData(uid)
-      .then(async (data) => {
+    const bootstrapUserData = async () => {
+      try {
+        let data = await loadUserData(uid);
+        if (!isCurrent) return;
+
         if (!data) {
-          // New user: create initial Firestore document with welcome notification
+          // A newly created Firebase account has no document yet. Create it
+          // without merging a fresh AppState that would clear authUser.
           const fresh = createInitialUserState();
-          await createUserData(uid, state.authUser?.email || '', fresh.notifications);
-          dispatch({
-            type: 'LOAD_FIREBASE_STATE',
-            state: {
-              ...fresh,
-              userId: uid,
-              currentScreen: 'onboarding',
-            },
-          });
-          dispatch({ type: 'SET_SYNC_STATUS', status: 'saved' });
-        } else {
-          // Existing user: load saved data
-          const loadedState = storedDataToState(data as StoredUserData, uid);
-          dispatch({
-            type: 'LOAD_FIREBASE_STATE',
-            state: {
-              ...loadedState,
-              currentScreen: loadedState.childProfile ? 'home' : 'onboarding',
-            },
-          });
-          dispatch({ type: 'SET_SYNC_STATUS', status: 'saved' });
+          data = await createUserData(uid, email, fresh.notifications);
+          if (!isCurrent) return;
         }
-        dispatch({ type: 'SET_AUTH_LOADING', loading: false });
-      })
-      .catch((error) => {
-        dispatch({ type: 'SET_SYNC_ERROR', error: mapFirebaseError(error) });
-        // Fall back to onboarding so the user is not stuck on splash
-        dispatch({ type: 'NAVIGATE', screen: state.childProfile ? 'home' : 'onboarding' });
-        dispatch({ type: 'SET_AUTH_LOADING', loading: false });
-      });
 
-    unsubscribeDataRef.current = subscribeToUserData(
-      uid,
-      (data) => {
-        if (!data) return;
+        const loadedState = storedDataToState(data, uid);
+        const entryScreen = loadedState.childProfile ? 'home' : 'profile-setup';
         dispatch({
           type: 'LOAD_FIREBASE_STATE',
-          state: storedDataToState(data, uid),
+          state: {
+            ...loadedState,
+            currentScreen: entryScreen,
+            previousScreen: null,
+            history: [entryScreen],
+            profileSetupMode: 'create',
+            editingChildId: null,
+          },
         });
         dispatch({ type: 'SET_SYNC_STATUS', status: 'saved' });
-      },
-      (error) => {
+
+        // Subscribe only after the initial document has selected the entry screen.
+        unsubscribeDataRef.current = subscribeToUserData(
+          uid,
+          (updatedData) => {
+            if (!updatedData) return;
+            dispatch({
+              type: 'LOAD_FIREBASE_STATE',
+              state: storedDataToState(updatedData, uid),
+            });
+            dispatch({ type: 'SET_SYNC_STATUS', status: 'saved' });
+          },
+          (error) => {
+            dispatch({ type: 'SET_SYNC_ERROR', error: mapFirebaseError(error) });
+          },
+        );
+      } catch (error) {
+        if (!isCurrent) return;
         dispatch({ type: 'SET_SYNC_ERROR', error: mapFirebaseError(error) });
+      } finally {
+        if (isCurrent) dispatch({ type: 'SET_USER_DATA_LOADING', loading: false });
       }
-    );
+    };
+
+    void bootstrapUserData();
 
     return () => {
+      isCurrent = false;
       unsubscribeDataRef.current?.();
+      unsubscribeDataRef.current = null;
     };
-  }, [state.authUser?.uid]);
+  }, [state.authUser, state.authInitialized]);
 
   // Save state changes to Firestore (debounced)
   useEffect(() => {
-    if (!state.authUser || state.authLoading) return;
+    // Never save the blank in-memory state while authenticated data is still
+    // loading, or after Firestore reported an error.
+    if (!state.authUser || state.authLoading || state.userDataLoading || state.syncError) return;
     const data = stateToStoredData(state, state.authUser.email || undefined);
     pendingSaveRef.current = data;
 
@@ -409,6 +471,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     state.language,
     state.authUser,
     state.authLoading,
+    state.userDataLoading,
+    state.syncError,
   ]);
 
   const navigate = useCallback((screen: Screen) => dispatch({ type: 'NAVIGATE', screen }), []);
@@ -446,9 +510,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_AUTH_ERROR', error: null });
     try {
       await signIn(email, password);
+      // Keep the form loading until onAuthStateChanged confirms the session.
     } catch (error) {
-      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error) });
-    } finally {
+      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error), code: getFirebaseErrorCode(error) });
       dispatch({ type: 'SET_AUTH_LOADING', loading: false });
     }
   }, []);
@@ -458,9 +522,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_AUTH_ERROR', error: null });
     try {
       await signUp(email, password);
+      // The confirmed auth observer routes a new account to Profile Setup.
     } catch (error) {
-      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error) });
-    } finally {
+      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error), code: getFirebaseErrorCode(error) });
       dispatch({ type: 'SET_AUTH_LOADING', loading: false });
     }
   }, []);
@@ -470,8 +534,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_AUTH_ERROR', error: null });
     try {
       await signInWithGoogle();
+      // Keep the form loading until onAuthStateChanged confirms the session.
     } catch (error) {
-      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error) });
+      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error), code: getFirebaseErrorCode(error) });
+      dispatch({ type: 'SET_AUTH_LOADING', loading: false });
+    }
+  }, []);
+
+  const handlePasswordReset = useCallback(async (email: string) => {
+    dispatch({ type: 'SET_AUTH_LOADING', loading: true });
+    dispatch({ type: 'SET_AUTH_ERROR', error: null });
+    try {
+      await sendPasswordReset(email);
+      return true;
+    } catch (error) {
+      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error), code: getFirebaseErrorCode(error) });
+      return false;
     } finally {
       dispatch({ type: 'SET_AUTH_LOADING', loading: false });
     }
@@ -483,8 +561,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await firebaseSignOut();
       dispatch({ type: 'SIGN_OUT' });
     } catch (error) {
-      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error) });
-    } finally {
+      dispatch({ type: 'SET_AUTH_ERROR', error: mapFirebaseError(error), code: getFirebaseErrorCode(error) });
       dispatch({ type: 'SET_AUTH_LOADING', loading: false });
     }
   }, []);
@@ -499,6 +576,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         signIn: handleSignIn,
         signUp: handleSignUp,
         signInWithGoogle: handleGoogleSignIn,
+        sendPasswordReset: handlePasswordReset,
         signOut: handleSignOut,
         setAuthError,
         clearSyncError,

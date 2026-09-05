@@ -142,7 +142,10 @@ export interface AppState {
   language: 'en' | 'ur';
   authUser: User | null;
   authLoading: boolean;
+  authInitialized: boolean;
+  userDataLoading: boolean;
   authError: string | null;
+  authErrorCode: string | null;
   syncError: string | null;
   syncStatus: 'idle' | 'saving' | 'saved' | 'error';
 }

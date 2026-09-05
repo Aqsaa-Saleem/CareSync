@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/useTranslation';
 import { PrimaryButton } from '../components/UI';
@@ -6,6 +6,22 @@ import type { SupportNeed, DiagnosisStatus, Gender, ChildProfile } from '../type
 import { AlertCircle, ChevronLeft, Plus, X } from 'lucide-react';
 
 const pakistanProvinces = ['Punjab', 'Sindh', 'Khyber Pakhtunkhwa', 'Balochistan', 'Islamabad'];
+
+type RequiredField = 'parentName' | 'childName' | 'dateOfBirth' | 'gender' | 'city' | 'province' | 'supportNeed';
+type ValidationErrors = Partial<Record<RequiredField, string>>;
+
+const invalidFieldStyle: React.CSSProperties = {
+  borderColor: 'rgba(229, 62, 62, 0.72)',
+  background: 'var(--color-error-bg)',
+};
+
+const fieldErrorStyle: React.CSSProperties = {
+  color: 'var(--color-error-text)',
+  fontSize: 12,
+  fontWeight: 600,
+  marginTop: 6,
+  lineHeight: 1.4,
+};
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -84,7 +100,24 @@ export function ProfileSetupScreen() {
     diagnosisStatus: (editingChild?.diagnosisStatus || '') as DiagnosisStatus | '',
   });
   const [photo, setPhoto] = useState<string | null>(editingChild?.photo || null);
-  const [errors, setErrors] = useState<string[]>([]);
+  const [errors, setErrors] = useState<ValidationErrors>({});
+  const fieldRefs = useRef<Record<RequiredField, HTMLElement | null>>({
+    parentName: null,
+    childName: null,
+    dateOfBirth: null,
+    gender: null,
+    city: null,
+    province: null,
+    supportNeed: null,
+  });
+
+  const clearFieldError = (field: RequiredField) => {
+    setErrors((current) => {
+      if (!current[field]) return current;
+      const { [field]: _removed, ...remaining } = current;
+      return remaining;
+    });
+  };
 
   const isFirstChild = state.children.length === 0 || (mode === 'create');
   const isEdit = mode === 'edit' && editingChild;
@@ -100,17 +133,24 @@ export function ProfileSetupScreen() {
     : null;
 
   const handleSubmit = () => {
-    const errs: string[] = [];
-    if (!form.parentName.trim()) errs.push(t('parentNameRequired') || 'Parent name is required');
-    if (!form.childName.trim()) errs.push(t('childNameRequired') || 'Child name is required');
-    if (!form.dateOfBirth) errs.push(t('dobRequired') || 'Date of birth is required');
-    if (!form.gender) errs.push(t('genderRequired') || 'Please select gender');
-    if (!form.city.trim()) errs.push(t('cityRequired') || 'City is required');
-    if (!form.province) errs.push(t('provinceRequired') || 'Province is required');
-    if (!form.supportNeed) errs.push(t('supportNeedRequired') || 'Primary support need is required');
+    const nextErrors: ValidationErrors = {};
+    if (!form.parentName.trim()) nextErrors.parentName = t('parentNameRequired') || 'This field is required.';
+    if (!form.childName.trim()) nextErrors.childName = t('childNameRequired') || 'This field is required.';
+    if (!form.dateOfBirth) nextErrors.dateOfBirth = t('dobRequired') || 'This field is required.';
+    if (!form.gender) nextErrors.gender = t('genderRequired') || 'This field is required.';
+    if (!form.city.trim()) nextErrors.city = t('cityRequired') || 'This field is required.';
+    if (!form.province) nextErrors.province = t('provinceRequired') || 'This field is required.';
+    if (!form.supportNeed) nextErrors.supportNeed = t('supportNeedRequired') || 'This field is required.';
 
-    if (errs.length > 0) {
-      setErrors(errs);
+    const firstInvalidField = Object.keys(nextErrors)[0] as RequiredField | undefined;
+    if (firstInvalidField) {
+      setErrors(nextErrors);
+      window.setTimeout(() => {
+        const field = fieldRefs.current[firstInvalidField];
+        if (!field) return;
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        field.focus({ preventScroll: true });
+      }, 0);
       return;
     }
 
@@ -174,27 +214,6 @@ export function ProfileSetupScreen() {
           </div>
         </div>
 
-        {errors.length > 0 && (
-          <div className="animate-fade-in" style={{
-            background: 'var(--color-error-bg)',
-            border: '1px solid #FFB3A8',
-            borderRadius: 12,
-            padding: '12px 16px',
-            marginBottom: 20,
-            display: 'flex',
-            gap: 10,
-            alignItems: 'flex-start',
-            flexDirection: isRTL ? 'row-reverse' : 'row',
-          }}>
-            <AlertCircle size={18} color="var(--color-error)" style={{ marginTop: 2, flexShrink: 0 }} />
-            <div>
-              {errors.map((e, i) => (
-                <p key={i} style={{ fontSize: 13, color: '#C0392B', lineHeight: 1.5, textAlign: isRTL ? 'right' : 'left' }}>{e}</p>
-              ))}
-            </div>
-          </div>
-        )}
-
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {/* Parent + Child Names + Avatar */}
           <div style={{
@@ -209,22 +228,36 @@ export function ProfileSetupScreen() {
               <div>
                 <label style={labelStyle}>{t('yourName')}</label>
                 <input
-                  style={inputStyle}
+                  ref={(node) => { fieldRefs.current.parentName = node; }}
+                  style={errors.parentName ? { ...inputStyle, ...invalidFieldStyle } : inputStyle}
                   placeholder={t('yourNamePlaceholder') || 'e.g., Ayesha Ahmed'}
                   value={form.parentName}
-                  onChange={(e) => setForm({ ...form, parentName: e.target.value })}
+                  onChange={(e) => {
+                    setForm({ ...form, parentName: e.target.value });
+                    clearFieldError('parentName');
+                  }}
+                  aria-invalid={Boolean(errors.parentName)}
+                  aria-describedby={errors.parentName ? 'parentName-error' : undefined}
                 />
+                {errors.parentName && <p id="parentName-error" role="alert" style={fieldErrorStyle}>{errors.parentName}</p>}
               </div>
 
               {/* Child Name */}
               <div>
                 <label style={labelStyle}>{t('childName')}</label>
                 <input
-                  style={inputStyle}
+                  ref={(node) => { fieldRefs.current.childName = node; }}
+                  style={errors.childName ? { ...inputStyle, ...invalidFieldStyle } : inputStyle}
                   placeholder={t('childNamePlaceholder') || 'e.g., Ali'}
                   value={form.childName}
-                  onChange={(e) => setForm({ ...form, childName: e.target.value })}
+                  onChange={(e) => {
+                    setForm({ ...form, childName: e.target.value });
+                    clearFieldError('childName');
+                  }}
+                  aria-invalid={Boolean(errors.childName)}
+                  aria-describedby={errors.childName ? 'childName-error' : undefined}
                 />
+                {errors.childName && <p id="childName-error" role="alert" style={fieldErrorStyle}>{errors.childName}</p>}
               </div>
             </div>
 
@@ -313,12 +346,19 @@ export function ProfileSetupScreen() {
           <div>
             <label style={labelStyle}>{t('dateOfBirth')}</label>
             <input
+              ref={(node) => { fieldRefs.current.dateOfBirth = node; }}
               type="date"
-              style={inputStyle}
+              style={errors.dateOfBirth ? { ...inputStyle, ...invalidFieldStyle } : inputStyle}
               value={form.dateOfBirth}
-              onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, dateOfBirth: e.target.value });
+                clearFieldError('dateOfBirth');
+              }}
               max={new Date().toISOString().split('T')[0]}
+              aria-invalid={Boolean(errors.dateOfBirth)}
+              aria-describedby={errors.dateOfBirth ? 'dateOfBirth-error' : undefined}
             />
+            {errors.dateOfBirth && <p id="dateOfBirth-error" role="alert" style={fieldErrorStyle}>{errors.dateOfBirth}</p>}
             {age !== null && age >= 0 && (
               <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
                 {t('age')}: {age} {age === 1 ? t('yearOld') : t('yearsOld')}
@@ -327,19 +367,28 @@ export function ProfileSetupScreen() {
           </div>
 
           {/* Gender */}
-          <div>
+          <div
+            ref={(node) => { fieldRefs.current.gender = node; }}
+            tabIndex={-1}
+            aria-invalid={Boolean(errors.gender)}
+            aria-describedby={errors.gender ? 'gender-error' : undefined}
+          >
             <label style={labelStyle}>{t('gender')}</label>
             <div style={{ display: 'flex', gap: 10, flexDirection: isRTL ? 'row-reverse' : 'row' }}>
               {genderOptions.map((g) => (
                 <button
+                  type="button"
                   key={g.value}
-                  onClick={() => setForm({ ...form, gender: g.value })}
+                  onClick={() => {
+                    setForm({ ...form, gender: g.value });
+                    clearFieldError('gender');
+                  }}
                   style={{
                     flex: 1,
                     padding: '12px 8px',
                     borderRadius: 'var(--radius-input)',
-                    border: form.gender === g.value ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
-                    background: form.gender === g.value ? 'var(--color-soft-lavender)' : 'var(--color-input-bg)',
+                    border: form.gender === g.value ? '2px solid var(--color-primary)' : errors.gender ? '1.5px solid rgba(229, 62, 62, 0.72)' : '1.5px solid var(--color-border)',
+                    background: form.gender === g.value ? 'var(--color-soft-lavender)' : errors.gender ? 'var(--color-error-bg)' : 'var(--color-input-bg)',
                     fontSize: 14,
                     fontWeight: 600,
                     color: form.gender === g.value ? 'var(--color-primary)' : 'var(--color-text-secondary)',
@@ -351,6 +400,7 @@ export function ProfileSetupScreen() {
                 </button>
               ))}
             </div>
+            {errors.gender && <p id="gender-error" role="alert" style={fieldErrorStyle}>{errors.gender}</p>}
           </div>
 
           {/* City + Province */}
@@ -358,40 +408,63 @@ export function ProfileSetupScreen() {
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('city')}</label>
               <input
-                style={inputStyle}
+                ref={(node) => { fieldRefs.current.city = node; }}
+                style={errors.city ? { ...inputStyle, ...invalidFieldStyle } : inputStyle}
                 placeholder={t('cityPlaceholder') || 'e.g., Lahore'}
                 value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, city: e.target.value });
+                  clearFieldError('city');
+                }}
+                aria-invalid={Boolean(errors.city)}
+                aria-describedby={errors.city ? 'city-error' : undefined}
               />
+              {errors.city && <p id="city-error" role="alert" style={fieldErrorStyle}>{errors.city}</p>}
             </div>
             <div style={{ flex: 1 }}>
               <label style={labelStyle}>{t('province')}</label>
               <select
-                style={{ ...inputStyle, appearance: 'none' }}
+                ref={(node) => { fieldRefs.current.province = node; }}
+                style={errors.province ? { ...inputStyle, appearance: 'none', ...invalidFieldStyle } : { ...inputStyle, appearance: 'none' }}
                 value={form.province}
-                onChange={(e) => setForm({ ...form, province: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, province: e.target.value });
+                  clearFieldError('province');
+                }}
+                aria-invalid={Boolean(errors.province)}
+                aria-describedby={errors.province ? 'province-error' : undefined}
               >
                 <option value="">{t('select')}</option>
                 {pakistanProvinces.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
+              {errors.province && <p id="province-error" role="alert" style={fieldErrorStyle}>{errors.province}</p>}
             </div>
           </div>
 
           {/* Support Need */}
-          <div>
+          <div
+            ref={(node) => { fieldRefs.current.supportNeed = node; }}
+            tabIndex={-1}
+            aria-invalid={Boolean(errors.supportNeed)}
+            aria-describedby={errors.supportNeed ? 'supportNeed-error' : undefined}
+          >
             <label style={labelStyle}>{t('supportNeed')}</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, flexDirection: isRTL ? 'row-reverse' : 'row' }}>
               {supportOptions.map((s) => (
                 <button
+                  type="button"
                   key={s.value}
-                  onClick={() => setForm({ ...form, supportNeed: s.value })}
+                  onClick={() => {
+                    setForm({ ...form, supportNeed: s.value });
+                    clearFieldError('supportNeed');
+                  }}
                   style={{
                     padding: '10px 14px',
                     borderRadius: 'var(--radius-chip)',
-                    border: form.supportNeed === s.value ? '2px solid var(--color-primary)' : '1.5px solid var(--color-border)',
-                    background: form.supportNeed === s.value ? 'var(--color-soft-lavender)' : 'var(--color-card)',
+                    border: form.supportNeed === s.value ? '2px solid var(--color-primary)' : errors.supportNeed ? '1.5px solid rgba(229, 62, 62, 0.72)' : '1.5px solid var(--color-border)',
+                    background: form.supportNeed === s.value ? 'var(--color-soft-lavender)' : errors.supportNeed ? 'var(--color-error-bg)' : 'var(--color-card)',
                     fontSize: 13,
                     fontWeight: 600,
                     color: form.supportNeed === s.value ? 'var(--color-primary)' : 'var(--color-text-secondary)',
@@ -403,6 +476,7 @@ export function ProfileSetupScreen() {
                 </button>
               ))}
             </div>
+            {errors.supportNeed && <p id="supportNeed-error" role="alert" style={fieldErrorStyle}>{errors.supportNeed}</p>}
           </div>
 
           {/* Diagnosis Status (optional) */}

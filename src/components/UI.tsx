@@ -476,14 +476,16 @@ export function VerifiedBadge() {
 export function CareSyncLogo({ size = 80 }: { size?: number }) {
   return (
     <img
-      src="/caresync-logo.jpg"
+      src="/caresync-logo.png"
       alt="CareSync"
+      width={size}
+      height={size}
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.28,
-        objectFit: 'cover',
-        boxShadow: '0 10px 36px rgba(109, 93, 251, 0.32)',
+        aspectRatio: '1',
+        objectFit: 'contain',
+        filter: 'drop-shadow(0 10px 18px rgba(109, 93, 251, 0.24))',
         display: 'block',
       }}
     />

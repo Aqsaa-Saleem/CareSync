@@ -81,7 +81,7 @@ export async function createUserData(
   uid: string,
   email: string,
   notifications: Notification[] = []
-): Promise<void> {
+): Promise<StoredUserData> {
   const now = new Date().toISOString();
   const initial: StoredUserData = {
     email,
@@ -99,6 +99,7 @@ export async function createUserData(
     language: 'en',
   };
   await setDoc(getUserDocRef(uid), initial);
+  return initial;
 }
 
 export function subscribeToUserData(
@@ -145,18 +146,21 @@ export function stateToStoredData(state: AppState, email?: string): Partial<Stor
   return data;
 }
 
-export function storedDataToState(data: StoredUserData, uid: string): Partial<AppState> {
-  const active = data.children.find((c) => c.id === data.activeChildId) || data.children[0] || null;
+export function storedDataToState(data: Partial<StoredUserData>, uid: string): Partial<AppState> {
+  // Existing accounts may have been created before every field was persisted.
+  // Normalize optional data so one missing field cannot block app entry.
+  const children = Array.isArray(data.children) ? data.children : [];
+  const active = children.find((c) => c.id === data.activeChildId) || children[0] || null;
   return {
     userId: uid,
     childProfile: active,
-    children: data.children,
+    children,
     activeChildId: active?.id || null,
-    completedActivities: data.completedActivities || [],
-    savedActivities: data.savedActivities || [],
-    parentNotes: data.parentNotes || [],
-    notifications: data.notifications || [],
-    chatMessages: data.chatMessages || [],
+    completedActivities: Array.isArray(data.completedActivities) ? data.completedActivities : [],
+    savedActivities: Array.isArray(data.savedActivities) ? data.savedActivities : [],
+    parentNotes: Array.isArray(data.parentNotes) ? data.parentNotes : [],
+    notifications: Array.isArray(data.notifications) ? data.notifications : [],
+    chatMessages: Array.isArray(data.chatMessages) ? data.chatMessages : [],
     streak: data.streak || 0,
     darkMode: data.darkMode ?? false,
     fontSize: data.fontSize || 'medium',

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { BottomNav, FloatingCareAIButton, SyncStatusBanner } from './components/UI';
 import { SplashScreen, OnboardingScreen } from './screens/SplashOnboarding';
@@ -27,6 +27,12 @@ function AppRouter() {
   const { state, navigate } = useApp();
   const screen = state.currentScreen;
 
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [screen]);
+
   useEffect(() => {
     document.body.classList.toggle('dark', state.darkMode);
     document.documentElement.dir = state.language === 'ur' ? 'rtl' : 'ltr';
@@ -35,8 +41,9 @@ function AppRouter() {
     document.documentElement.style.fontSize = `${rootSize}px`;
   }, [state.darkMode, state.language, state.fontSize]);
 
-  // Show loading spinner while checking auth state
-  if (state.authLoading && !state.authUser) {
+  // Do not render an auth decision until Firebase resolves the persisted
+  // session, and keep authenticated users here while their app data loads.
+  if (!state.authInitialized || (state.authUser && state.userDataLoading)) {
     return (
       <div style={{
         minHeight: '100dvh',
