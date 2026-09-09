@@ -341,7 +341,7 @@ export function CareAIScreen() {
     }
   }, [state.chatMessages, isTyping]);
 
-  const sendMessage = (text: string) => {
+  const sendMessage = async (text: string) => {
     if (!text.trim() || isTyping) return;
 
     const userMsg = {
@@ -359,23 +359,56 @@ export function CareAIScreen() {
     setInput('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      const response = generateAIResponse(text, state);
+    try {
+      const apiResponse = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          childContext: {
+            supportNeed: state.childProfile?.supportNeed,
+            diagnosisStatus: state.childProfile?.diagnosisStatus,
+            city: state.childProfile?.city,
+            province: state.childProfile?.province,
+          },
+        }),
+      });
+
+      let aiText = '';
+
+      if (apiResponse.ok) {
+        const data = await apiResponse.json();
+        aiText = typeof data?.text === 'string' ? data.text.trim() : '';
+      }
+
+      if (!aiText) {
+        aiText =
+          "I'm sorry, I couldn't process that right now. Please try again in a moment. If the problem continues, try rephrasing your question.";
+      }
 
       const aiMsg = {
         id: `msg-${Date.now() + 1}`,
         role: 'ai' as const,
-        text: response,
+        text: aiText,
         timestamp: new Date(),
       };
 
-      dispatch({
-        type: 'ADD_CHAT_MESSAGE',
-        message: aiMsg,
-      });
+      dispatch({ type: 'ADD_CHAT_MESSAGE', message: aiMsg });
+    } catch {
+      // API unreachable — fall back to local offline responses
+      const fallback = generateAIResponse(text, state);
 
+      const errorMsg = {
+        id: `msg-${Date.now() + 1}`,
+        role: 'ai' as const,
+        text: fallback,
+        timestamp: new Date(),
+      };
+
+      dispatch({ type: 'ADD_CHAT_MESSAGE', message: errorMsg });
+    } finally {
       setIsTyping(false);
-    }, 1200 + Math.random() * 800);
+    }
   };
 
   const hasMessages = state.chatMessages.length > 0;
