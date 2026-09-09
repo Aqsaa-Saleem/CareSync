@@ -11,38 +11,281 @@ const suggestedQuestions = [
   'Find speech therapists near me.',
 ];
 
-function generateAIResponse(userMsg: string): string {
-  const msg = userMsg.toLowerCase();
+function generateAIResponse(userMsg: string, state: AppState): string {
+  const msg = userMsg.toLowerCase().trim();
+  const child = state.childProfile;
+  
 
-  if (msg.includes('activit') || msg.includes('what can i do') || msg.includes('today')) {
-    return `Here's a simple activity to try today:\n\n**Picture Naming** (5 minutes)\n\n1. Choose 3 familiar objects (cup, ball, spoon).\n2. Show one object to your child.\n3. Say its name clearly.\n4. Give your child time to respond.\n5. Praise any attempt to communicate.\n\nThis builds vocabulary and word-object association.\n\nWould you like more activities, or shall I find a specialist near you?`;
-  }
+  const age = child?.age ? `${child.age}` : '';
+  const focus = child?.supportNeed?.toLowerCase() || '';
 
-  if (msg.includes('sound') || msg.includes('hear') || msg.includes('respond')) {
-    return `It's understandable to feel concerned. Here are some things you can try:\n\n1. **Sound Hunt**: Use a bell or rattle from different directions and see if your child turns toward the sound.\n2. **Musical Direction Game**: Play music from different spots and encourage your child to move toward it.\n3. Observe if your child responds to loud or sudden sounds.\n\nIf you haven't already, consider scheduling a hearing assessment with an audiologist. Early detection can make a big difference.\n\nWould you like me to help find an audiologist near you?`;
-  }
+  if (/^(hi|hello|hey|salam|assalamualaikum)\b/.test(msg)) {
+    return `Hello! I'm Care AI, your CareSync support companion. 🌷
 
-  if (msg.includes('communicat') || msg.includes('speak') || msg.includes('talk') || msg.includes('word')) {
-    return `Here are some ways to encourage communication:\n\n1. **Bubble Blowing**: Blow bubbles and wait for your child to say "more" or "pop."\n2. **Choice Game**: Hold up two items and wait for them to indicate which one they want.\n3. **Animal Sounds**: Show animal pictures and make sounds together.\n\nKey tips:\n• Follow your child's lead and interests\n• Give plenty of time to respond\n• Praise any attempt to communicate\n• Keep it fun and low-pressure\n\nWould you like a step-by-step guide for any of these?`;
-  }
+I can help you with activities, communication, progress, daily routines, and finding the right support.
 
-  if (msg.includes('therapist') || msg.includes('doctor') || msg.includes('specialist') || msg.includes('find')) {
-    return `I can help you find the right professional. You can browse our directory of verified specialists by going to the **Find a Specialist** section.\n\nYou can filter by:\n• Specialization (Speech Therapist, Child Psychologist, etc.)\n• City and Province\n• Support area\n\nWould you like me to take you there, or would you prefer to search for a therapy centre instead?`;
-  }
+${child ? `I'm currently helping with ${child.name}'s profile${age ? ` (age ${age})` : ''}${focus ? `, focusing on ${child.focusArea}` : ''}.` : 'Once you create a child profile, I can personalize my suggestions for your child.'}
 
-  if (msg.includes('progress') || msg.includes('improv') || msg.includes('milestone')) {
-    return `Every child develops at their own pace. Here are some positive signs to look for:\n\n• **Increased eye contact** during activities\n• **Attempting new sounds** or words\n• **Showing interest** in activities they didn't before\n• **Responding** to their name more consistently\n\nYou can track your child's progress in the **Progress** section of the app. Small, consistent steps often lead to meaningful improvements.\n\nRemember: CareSync provides educational guidance — for developmental concerns, always consult with a qualified professional.`;
-  }
-
-  if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey')) {
-    return `Hello! I'm Care AI, your everyday support companion.\n\nI can help you with:\n• Activity recommendations\n• Tips for supporting your child's development\n• Finding specialists and centres\n• Answering questions about developmental support\n\nWhat would you like to know today?`;
+What would you like help with today?`;
   }
 
   if (msg.includes('thank')) {
-    return `You're welcome! Remember, every small step counts. If you have more questions anytime, I'm here to help.\n\nKeep up the wonderful work you're doing for your child!`;
+    return `You're welcome! 💜
+
+Every small step matters. If you'd like, you can also tell me what you're noticing about your child and I'll help you think through some practical next steps.`;
   }
 
-  return `That's a great question. Here's what I'd suggest:\n\n1. Start with short, 5-minute activities that match your child's interests.\n2. Be consistent — even a little practice every day helps.\n3. Celebrate every attempt your child makes.\n4. Don't hesitate to reach out to a professional for personalized guidance.\n\nYou can browse our **Activities** section for specific exercises, or check the **Centres** section to find support near you.\n\nIs there something specific you'd like help with?`;
+  if (
+    msg.includes('activity') ||
+    msg.includes('activities') ||
+    msg.includes('practice') ||
+    msg.includes('exercise')
+  ) {
+    const completed = state.completedActivities.length;
+
+    if (focus.includes('speech') || focus.includes('communication')) {
+      return `Since the current focus is ${child?.focusArea || 'communication'}, try a short communication activity today:
+
+**Choice Game** (5–10 minutes)
+
+1. Offer your child two familiar objects.
+2. Hold them where your child can see both.
+3. Name each object slowly.
+4. Wait several seconds for a response.
+5. Accept pointing, looking, reaching, sounds, or words as communication.
+6. Praise the attempt without pressuring your child.
+
+${age ? `Because your child is ${age}, keep the activity short and playful.` : 'Keep the activity short and playful.'}
+
+You've completed ${completed} activities so far. Try something new today if your child is ready.`;
+    }
+
+    if (
+      focus.includes('hearing') ||
+      focus.includes('visual') ||
+      focus.includes('motor') ||
+      focus.includes('physical') ||
+      focus.includes('autism')
+    ) {
+      return `For ${child?.focusArea || "your child's current focus area"}, choose an activity that is simple, predictable, and comfortable for your child.
+
+Try this:
+
+**Follow-the-Lead Game** (5 minutes)
+
+1. Choose something your child already enjoys.
+2. Join their play instead of immediately directing it.
+3. Copy what they do.
+4. Pause and give them a chance to respond.
+5. Celebrate any attempt to interact.
+
+Watch your child's reactions and stop if they seem overwhelmed.
+
+If you tell me what your child enjoys most, I can suggest a more specific activity.`;
+    }
+
+    return `Here is a simple activity you can try today:
+
+**Object Hunt** (5–10 minutes)
+
+1. Choose 3 familiar objects.
+2. Place them where your child can see them.
+3. Ask your child to find one.
+4. Give them plenty of time to respond.
+5. Celebrate any successful attempt.
+6. Repeat with another object.
+
+${child ? `For ${child.name}${age ? `, who is ${age}` : ''}, keep it playful and adjust the difficulty to their ability.` : 'Adjust the activity to your child’s age and ability.'}
+
+If you tell me your child's current focus, I can give you a more targeted activity.`;
+  }
+
+  if (
+    msg.includes('speak') ||
+    msg.includes('talk') ||
+    msg.includes('word') ||
+    msg.includes('language') ||
+    msg.includes('communication') ||
+    msg.includes('communicat')
+  ) {
+    return `To encourage communication, focus on creating opportunities rather than demanding words.
+
+Try this:
+
+**Pause & Respond**
+
+• Get down to your child's level.
+• Follow something they're interested in.
+• Use short, simple words.
+• Pause after speaking so they have time to respond.
+• Treat gestures, eye contact, sounds, pointing, and words as meaningful attempts.
+• Praise communication without forcing repetition.
+
+${child?.focusArea ? `This can be especially useful alongside your child's ${child.focusArea} support activities.` : ''}
+
+If you're concerned about your child's speech or communication development, a qualified speech-language professional can provide an individual assessment.`;
+  }
+
+  if (
+    msg.includes('sound') ||
+    msg.includes('hear') ||
+    msg.includes('hearing') ||
+    msg.includes('noise') ||
+    msg.includes('respond to my name')
+  ) {
+    return `If your child isn't consistently responding to sounds or their name, it's worth paying attention to the pattern rather than testing them repeatedly.
+
+At home, you can gently observe:
+
+• Whether they respond to familiar voices.
+• Whether they notice everyday sounds.
+• Whether they turn toward sounds from different directions.
+• Whether their response changes depending on how loud or familiar the sound is.
+
+Avoid very loud sounds close to your child's ears.
+
+If you're concerned about hearing, an audiologist or pediatric healthcare professional can properly assess your child's hearing. Home activities cannot replace a hearing assessment.`;
+  }
+
+  if (
+    msg.includes('eye contact') ||
+    msg.includes('looking at me') ||
+    msg.includes('look at me')
+  ) {
+    return `If your child doesn't make much eye contact, try not to turn it into a requirement.
+
+Instead:
+
+1. Join an activity your child already enjoys.
+2. Position yourself naturally within their view.
+3. Use an interesting toy or sound to invite attention.
+4. Pause during the activity and give them time to respond.
+5. Celebrate interaction in whatever form feels comfortable for them.
+
+Eye contact by itself doesn't tell you everything about a child's development. If you're noticing several developmental concerns together, discussing them with a qualified professional is a good next step.`;
+  }
+
+  if (
+    msg.includes('autism') ||
+    msg.includes('sensory') ||
+    msg.includes('overwhelmed') ||
+    msg.includes('meltdown')
+  ) {
+    return `If you're supporting a child with autism or sensory differences, predictability and low-pressure activities can help.
+
+You can try:
+
+• Keeping activities short.
+• Using the same simple routine.
+• Offering choices instead of demands.
+• Reducing unnecessary noise or distractions.
+• Watching for signs that your child needs a break.
+• Following their interests when possible.
+
+There isn't one strategy that works for every child. If you tell me what happens before your child becomes overwhelmed, I can help you think through some practical options.`;
+  }
+
+  if (
+    msg.includes('motor') ||
+    msg.includes('walking') ||
+    msg.includes('movement') ||
+    msg.includes('physical') ||
+    msg.includes('fine motor') ||
+    msg.includes('grip')
+  ) {
+    return `For motor development, simple everyday play can provide useful practice.
+
+Try **Reach & Place**:
+
+1. Put a few safe objects within easy reach.
+2. Encourage your child to pick one up.
+3. Ask them to place it into a container.
+4. Repeat with different objects.
+5. Let them work at their own pace.
+
+Choose objects appropriate for your child's age and supervise closely.
+
+If your child is having difficulty with movement or losing skills they previously had, discuss it with a qualified pediatric or therapy professional.`;
+  }
+
+  if (
+    msg.includes('progress') ||
+    msg.includes('improve') ||
+    msg.includes('milestone') ||
+    msg.includes('completed')
+  ) {
+    const completed = state.completedActivities.length;
+    const saved = state.savedActivities.length;
+
+    return `Here's what I can see from your CareSync activity data:
+
+• Activities completed: ${completed}
+• Activities saved: ${saved}
+• Current streak: ${state.streak} day${state.streak === 1 ? '' : 's'}
+
+Progress isn't only about numbers. You can also look for changes in how comfortably your child participates, communicates, interacts, or completes an activity.
+
+If you tell me what change you've noticed recently, I can help you think about what it might mean and what you could practice next.`;
+  }
+
+  if (
+    msg.includes('therapist') ||
+    msg.includes('doctor') ||
+    msg.includes('specialist') ||
+    msg.includes('professional') ||
+    msg.includes('centre') ||
+    msg.includes('center') ||
+    msg.includes('find')
+  ) {
+    return `I can help you decide what type of professional may be relevant.
+
+For example:
+
+• Speech or language concerns → Speech-Language Therapist
+• Hearing concerns → Audiologist
+• Movement or motor concerns → Physiotherapist / Occupational Therapist
+• Broader developmental concerns → Pediatric or developmental professional
+
+You can use CareSync's **Find a Specialist** section to browse available professionals and centres.
+
+If you tell me the specific concern and your city, I can also help you figure out what type of support to look for.`;
+  }
+
+  if (
+    msg.includes('what should i do') ||
+    msg.includes('help me') ||
+    msg.includes('worried') ||
+    msg.includes('concerned') ||
+    msg.includes('problem')
+  ) {
+    return `Let's break it down into something manageable.
+
+First, tell me:
+
+1. What exactly are you noticing?
+2. How old is your child?
+3. When did you first notice it?
+4. Does it happen all the time or only in certain situations?
+
+${child ? `I already have ${child.name}'s profile${age ? ` and know they are ${age}` : ''}, so you don't need to repeat information that's already in CareSync.` : ''}
+
+I'll help you think through practical next steps, while keeping in mind that Care AI isn't a replacement for a qualified professional.`;
+  }
+
+  return `I can help you with your child's daily activities, communication, development, progress, and finding appropriate support.
+
+${child ? `For context, I'm currently using ${child.name}'s CareSync profile${age ? ` (age ${age})` : ''}${focus ? ` with a focus on ${child.focusArea}` : ''}.` : ''}
+
+I didn't quite understand what you need yet.
+
+Try telling me something specific, such as:
+• "My child doesn't respond when I call their name."
+• "Give me an activity for communication."
+• "My child avoids eye contact."
+• "How can I track progress?"
+• "What type of therapist should I look for?"
+
+You can also simply describe what you're noticing in your own words.`;
 }
 
 export function CareAIScreen() {
@@ -72,7 +315,7 @@ export function CareAIScreen() {
     setIsTyping(true);
 
     setTimeout(() => {
-      const response = generateAIResponse(text);
+      const response = generateAIResponse(text, state);
       const aiMsg = {
         id: `msg-${Date.now() + 1}`,
         role: 'ai' as const,
@@ -234,17 +477,19 @@ export function CareAIScreen() {
           </div>
         )}
 
-        {state.chatMessages.map((msg) => (
-          <div
-            key={msg.id}
-            className="animate-fade-in"
-            style={{
-              display: 'flex',
-              gap: 10,
-              alignItems: 'flex-start',
-              flexDirection: msg.role === 'user' ? (isRTL ? 'row' : 'row-reverse') : (isRTL ? 'row-reverse' : 'row'),
-            }}
-          >
+{state.chatMessages.map((msg) => (
+  <div
+  key={msg.id}
+  className="animate-fade-in"
+  style={{
+  display: 'flex',
+  gap: 10,
+  alignItems: 'flex-start',
+  justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+  flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+  width: '100%',
+}}
+>
             <div style={{
               width: 32,
               height: 32,
@@ -264,6 +509,7 @@ export function CareAIScreen() {
               padding: '14px 16px',
               boxShadow: msg.role === 'ai' ? 'var(--shadow-card)' : 'none',
               maxWidth: '80%',
+              
             }}>
               {msg.text.split('\n').map((line, i) => (
                 <p key={i} style={{
