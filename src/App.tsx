@@ -108,7 +108,7 @@ function AppRouter() {
       position: 'relative',
     }}>
       <SyncStatusBanner />
-      <div key={screen} className="animate-fade-in" style={{ animationDuration: '0.25s' }}>
+      <div key={screen} className={screen === 'care-ai' ? '' : 'animate-fade-in'} style={{ animationDuration: '0.25s' }}>
         {renderScreen()}
       </div>
       {!hideBottomNav && state.childProfile && <BottomNav />}
