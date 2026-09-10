@@ -199,6 +199,16 @@ img {
   animation: fadeIn 0.4s ease-out forwards;
 }
 
+/*
+ * The fadeIn animation leaves transform: translateY(0) on the wrapper,
+ * which creates a CSS containing block for position: fixed descendants.
+ * The Care AI screen uses position: fixed to cover the full viewport,
+ * so we must neutralize the transform when it is visible.
+ */
+.animate-fade-in:has([data-careai-fullscreen]) {
+  transform: none !important;
+}
+
 .animate-fade-in-up {
   animation: fadeInUp 0.5s ease-out forwards;
 }

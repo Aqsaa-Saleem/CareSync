@@ -415,14 +415,11 @@ export function CareAIScreen() {
 
   return (
     <div
-      className="screen"
+      data-careai-fullscreen
       style={{
         background: 'var(--color-background)',
         display: 'flex',
         flexDirection: 'column',
-        height: '100dvh',
-        width: '100vw',
-        maxWidth: 'none',
         position: 'fixed',
         top: 0,
         left: 0,
